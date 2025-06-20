@@ -1,0 +1,247 @@
+<!DOCTYPE html><html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Dark Image Gallery</title>
+  <script defer src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <style>
+    body {
+      margin: 0;
+      font-family: 'Segoe UI', sans-serif;
+      background-color: #0e0e10;
+      color: #e0f7ff;
+    }header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 2rem;
+  background-color: #1c1c24;
+}
+
+header h1 {
+  margin: 0;
+  font-size: 1.5rem;
+}
+
+header button {
+  background: #00bfff;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 6px;
+  color: white;
+  cursor: pointer;
+}
+
+#gallery {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 1rem;
+  padding: 1rem;
+}
+
+.img-box {
+  aspect-ratio: 1 / 1;
+  background-color: #1e1e2e;
+  overflow: hidden;
+  border-radius: 8px;
+  position: relative;
+}
+
+.img-box img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  cursor: pointer;
+}
+
+.popup {
+  position: fixed;
+  top: 0; left: 0;
+  width: 100%; height: 100%;
+  background: rgba(0, 0, 0, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  display: none;
+}
+
+.popup img {
+  max-width: 90%;
+  max-height: 90%;
+}
+
+.popup.active {
+  display: flex;
+}
+
+.modal {
+  background: #1c1c24;
+  padding: 1rem;
+  border-radius: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.modal input {
+  padding: 0.5rem;
+  border-radius: 6px;
+  border: none;
+  outline: none;
+}
+
+  </style>
+</head>
+<body>
+  <header>
+    <h1>Dark Image Gallery</h1>
+    <div>
+      <button onclick="openAddModal()">Tambah</button>
+      <button onclick="openSettingsModal()">
+        <img src="https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png" alt="GitHub" width="20" />
+      </button>
+    </div>
+  </header>  <div id="gallery"></div>  <div class="popup" id="popup" onclick="closePopup()">
+    <img id="popup-img" src="" />
+  </div>  <dialog id="addModal">
+    <form class="modal" onsubmit="uploadImage(event)">
+      <h3>Tambah Gambar</h3>
+      <input type="file" id="file" required />
+      <input type="text" id="imgName" placeholder="Nama gambar" required />
+      <input type="text" id="category" placeholder="Kategori" required />
+      <button type="submit">Unggah</button>
+      <button type="button" onclick="closeAddModal()">Batal</button>
+    </form>
+  </dialog>  <dialog id="settingsModal">
+    <form class="modal" onsubmit="saveSettings(event)">
+      <h3>Pengaturan GitHub</h3>
+      <input type="text" id="githubUser" placeholder="Username GitHub" required />
+      <input type="text" id="repo" placeholder="Nama Repositori" required />
+      <input type="password" id="token" placeholder="Token PAT" required />
+      <button type="submit">Simpan</button>
+      <button type="button" onclick="closeSettingsModal()">Tutup</button>
+    </form>
+  </dialog>  <script>
+    const gallery = document.getElementById('gallery');
+    const popup = document.getElementById('popup');
+    const popupImg = document.getElementById('popup-img');
+
+    let githubUser = localStorage.getItem('ghUser') || '';
+    let repo = localStorage.getItem('ghRepo') || '';
+    let token = localStorage.getItem('ghToken') || '';
+
+    function openPopup(src) {
+      popupImg.src = src;
+      popup.classList.add('active');
+    }
+
+    function closePopup() {
+      popup.classList.remove('active');
+    }
+
+    function openAddModal() {
+      document.getElementById('addModal').showModal();
+    }
+
+    function closeAddModal() {
+      document.getElementById('addModal').close();
+    }
+
+    function openSettingsModal() {
+      document.getElementById('settingsModal').showModal();
+    }
+
+    function closeSettingsModal() {
+      document.getElementById('settingsModal').close();
+    }
+
+    async function uploadImage(e) {
+      e.preventDefault();
+      const fileInput = document.getElementById('file');
+      const imgName = document.getElementById('imgName').value;
+      const category = document.getElementById('category').value;
+
+      const formData = new FormData();
+      formData.append('image', fileInput.files[0]);
+
+      try {
+        const res = await axios.post('https://api.imgbb.com/1/upload?key=c6ecd530468136da6997bfea179b0420', formData);
+        const imgUrl = res.data.data.url;
+
+        const newData = {
+          name: imgName,
+          category,
+          url: imgUrl,
+        };
+
+        const existing = JSON.parse(localStorage.getItem('galleryData') || '[]');
+        existing.push(newData);
+        localStorage.setItem('galleryData', JSON.stringify(existing));
+        renderGallery();
+        closeAddModal();
+
+        await uploadToGitHub(existing);
+      } catch (err) {
+        alert('Upload gagal!');
+      }
+    }
+
+    function saveSettings(e) {
+      e.preventDefault();
+      githubUser = document.getElementById('githubUser').value;
+      repo = document.getElementById('repo').value;
+      token = document.getElementById('token').value;
+
+      localStorage.setItem('ghUser', githubUser);
+      localStorage.setItem('ghRepo', repo);
+      localStorage.setItem('ghToken', token);
+
+      closeSettingsModal();
+    }
+
+    async function uploadToGitHub(data) {
+      if (!githubUser || !repo || !token) return;
+      const content = btoa(unescape(encodeURIComponent(JSON.stringify(data, null, 2))));
+      const apiUrl = `https://api.github.com/repos/${githubUser}/${repo}/contents/data.json`;
+
+      try {
+        const res = await fetch(apiUrl, {
+          headers: {
+            Authorization: `token ${token}`,
+          },
+        });
+
+        const method = res.ok ? 'PUT' : 'PUT';
+        const sha = res.ok ? (await res.json()).sha : undefined;
+
+        await fetch(apiUrl, {
+          method,
+          headers: {
+            Authorization: `token ${token}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({
+            message: 'Update data.json',
+            content,
+            sha,
+          }),
+        });
+      } catch (err) {
+        alert('Gagal menyimpan ke GitHub.');
+      }
+    }
+
+    function renderGallery() {
+      const data = JSON.parse(localStorage.getItem('galleryData') || '[]');
+      gallery.innerHTML = '';
+      data.forEach(img => {
+        const box = document.createElement('div');
+        box.className = 'img-box';
+        box.innerHTML = `<img src="${img.url}" onclick="openPopup('${img.url}')" title="${img.name}" />`;
+        gallery.appendChild(box);
+      });
+    }
+
+    renderGallery();
+  </script></body>
+</html>
